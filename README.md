@@ -1,7 +1,7 @@
 # ui_tableview
 一个保留了 iOS 相关命名习惯的 flutter 库。
 
-<img src="https://github.com/Maojunhao/ui_tableview/blob/main/images/ui_tableview_indexpath.gif" width="300"><img src="https://github.com/Maojunhao/ui_tableview/blob/main/images/ui_tableview_contacts.gif" width="300">
+<img src="https://github.com/Maojunhao/ui_tableview/blob/main/images/ui_tableview_indexpath.png" width="300"><img src="https://github.com/Maojunhao/ui_tableview/blob/main/images/ui_tableview_contacts.png" width="300">
 
 ## Getting Started
 
