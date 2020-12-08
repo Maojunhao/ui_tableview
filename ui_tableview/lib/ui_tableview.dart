@@ -2,27 +2,48 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+const double default_header_height = 30;
+
+const double default_item_height = 44;
+
+
 class UITableView<T> extends StatefulWidget {
 
-  // 每组对应 行数
-  final int Function(BuildContext context, int section) numberOfRowsInSection;
-
-  // builder 函数
-  final Widget Function(BuildContext context, UIIndexPath indexPath) itemForRowAtIndexPath;
+  /*------------------------------
+    数量控制
+  -------------------------------*/
 
   // 组数
   final int Function(BuildContext context) numberOfSections;
 
-  // Header Builder 函数
+  // 每组对应 行数
+  final int Function(BuildContext context, int section) numberOfRowsInSection;
+
+  /*------------------------------
+    构造相关
+  -------------------------------*/
+
+  // 每组的 Header 构建函数
   final Widget Function(BuildContext context, int section) widgetForHeaderInSection;
 
-  // item 高度
+  // 每行的 Item 构建函数
+  final Widget Function(BuildContext context, UIIndexPath indexPath) itemForRowAtIndexPath;
+
+  /*------------------------------
+    高度控制相关
+  -------------------------------*/
+
+  // item 高度，默认 44
   final double Function(BuildContext context, UIIndexPath indexPath) heightForRowAtIndexPath;
 
-  // section 高度
+  // section 高度，默认 30
   final double Function(BuildContext context, int section) heightForHeaderInSection;
 
-  // 是否需要 hover
+  /*------------------------------
+    顶部悬停相关属性
+  -------------------------------*/
+
+  // 是否需要 hover， 默认为 true
   final bool needHover;
 
   // Hover Header Builder 函数
@@ -31,18 +52,38 @@ class UITableView<T> extends StatefulWidget {
   // Hover Header Height
   final double Function(BuildContext context, int section) heightForHoverHeaderInSection;
 
+  /*-------------------------------
+    滑动事件
+  ---------------------------------*/
+
+  // 滑动过程中实时返回偏移量
+  final double Function(double offset) scrollViewDidScroll;
+
+  // 滑动过程中，当前处于最上方的 section 发生改变，只有 needHover = true 时有效
+  final int Function(int section) tableViewDidChangeSection;
+
+  /*-------------------------------
+    位置初始化
+  ---------------------------------*/
+
+  // 设置当前滑动停留的位置
+  final double contentOffset;
+
 
   const UITableView({
     Key key,
     this.numberOfSections,
-    this.numberOfRowsInSection,
-    this.itemForRowAtIndexPath,
+    @required this.numberOfRowsInSection,
+    @required this.itemForRowAtIndexPath,
     this.heightForRowAtIndexPath,
     this.widgetForHeaderInSection,
     this.heightForHeaderInSection,
     this.widgetForHoverHeader,
     this.heightForHoverHeaderInSection,
     this.needHover = true,
+    this.scrollViewDidScroll,
+    this.tableViewDidChangeSection,
+    this.contentOffset,
   }) : super(key: key);
 
   @override
@@ -52,14 +93,11 @@ class UITableView<T> extends StatefulWidget {
 class UITableViewState<T> extends State <UITableView<T>> {
   UIDataSource _items = UIDataSource();
 
-  ScrollController _controller = ScrollController();
+  ScrollController _controller;
 
   StreamController<double> _streamController = StreamController<double>();
   double _offsetY = 0.0;
   int _section = 0;
-
-  double _hoverHeaderHeight = 30;
-
 
   @override
   void initState() {
@@ -103,7 +141,6 @@ class UITableViewState<T> extends State <UITableView<T>> {
       },
     ) : null;
 
-
     return Stack(
       children: [
         listView,
@@ -115,7 +152,7 @@ class UITableViewState<T> extends State <UITableView<T>> {
   // 创建 Header
   Container _buildHeader(context, int section){
     return Container(
-      height: widget.heightForHeaderInSection == null ? 30 : widget.heightForHeaderInSection(context, section),
+      height: widget.heightForHeaderInSection == null ? default_header_height : widget.heightForHeaderInSection(context, section),
       child: widget.widgetForHeaderInSection == null ? null : widget.widgetForHeaderInSection(context, section),
     );
   }
@@ -123,7 +160,7 @@ class UITableViewState<T> extends State <UITableView<T>> {
   // 创建 Item
   Container _buildItem(context, UIIndexPath indexPath){
     return Container(
-      height: widget.heightForRowAtIndexPath == null ? 44 : widget.heightForRowAtIndexPath(context, indexPath),
+      height: widget.heightForRowAtIndexPath == null ? default_item_height : widget.heightForRowAtIndexPath(context, indexPath),
       child: widget.itemForRowAtIndexPath(context, indexPath),
     );
   }
@@ -133,31 +170,42 @@ class UITableViewState<T> extends State <UITableView<T>> {
     // 顶部下拉不展示悬浮
     if (_offsetY < 0) { return Container(); }
 
-    // 获取悬浮 Header
-    Widget header = widget.widgetForHoverHeader == null ? null : widget.widgetForHoverHeader(context, _section);
-    if (header == null) {
-      header = widget.widgetForHeaderInSection == null ? null : widget.widgetForHeaderInSection(context, _section);
+    if (widget.widgetForHoverHeader == null && widget.widgetForHeaderInSection == null) {
+      return Container();
     }
-    if (header == null) { return Container(); }
 
     // 获取悬浮 Header 高度
-    double height = widget.heightForHoverHeaderInSection == null ? 0 : widget.heightForHoverHeaderInSection(context, _section);
-    if (height == 0) {
-      height = widget.heightForHeaderInSection == null ? 0 : widget.heightForHeaderInSection(context, _section);
+    double height = widget.heightForHoverHeaderInSection == null ? null : widget.heightForHoverHeaderInSection(context, _section);
+    if (height == null) {
+      height = widget.heightForHeaderInSection == null ? default_header_height : widget.heightForHeaderInSection(context, _section);
     }
 
     // 计算偏移量，展示当前 section
     double offset = 0;
+    int currentSection = _section;
     for (int section = 0; section < _items.sections.length; section++){
       UISectionModel sectionModel = _items.sections[section];
       if (_offsetY >= sectionModel.start && _offsetY <= sectionModel.end) {
-        _section = sectionModel.section;
+//        print('offset = $offset, _offsetY = $_offsetY, start = ${sectionModel.start}, end = ${sectionModel.end}');
+        currentSection = sectionModel.section;
         // 根据偏移量计算，当 Header 替换的阶段做一个上推的动效
         double topOffset = sectionModel.end - _offsetY;
         if (topOffset >= 0 && topOffset <= height){
           offset = topOffset - height;
+          break;
         }
       }
+    }
+
+    if (_section != currentSection && widget.tableViewDidChangeSection != null) {
+      widget.tableViewDidChangeSection(currentSection);
+    }
+    _section = currentSection;
+
+    // 获取悬浮 Header
+    Widget header = widget.widgetForHoverHeader == null ? null : widget.widgetForHoverHeader(context, _section);
+    if (header == null) {
+      header = widget.widgetForHeaderInSection == null ? null : widget.widgetForHeaderInSection(context, _section);
     }
 
     /*
@@ -185,7 +233,7 @@ class UITableViewState<T> extends State <UITableView<T>> {
     for(int section = 0; section < sections; section++){
       UISectionModel sectionModel = UISectionModel();
       sectionModel.section = section;
-      sectionModel.height = widget.heightForHeaderInSection(context, section);
+      sectionModel.height = widget.heightForHeaderInSection == null ? default_header_height : widget.heightForHeaderInSection(context, section);
       sectionModel.start = start;
 
       UIRowModel headerModel = UIRowModel();
@@ -198,7 +246,7 @@ class UITableViewState<T> extends State <UITableView<T>> {
       for(int row = 0; row < rows; row++){
         UIRowModel rowModel = UIRowModel();
         rowModel.indexPath = UIIndexPath(section: section, row: row);
-        rowModel.height = widget.heightForRowAtIndexPath(context, rowModel.indexPath);
+        rowModel.height = widget.heightForRowAtIndexPath == null ? default_item_height : widget.heightForRowAtIndexPath(context, rowModel.indexPath);
         start += rowModel.height;
         sectionModel.rows.add(rowModel);
       }
@@ -209,9 +257,14 @@ class UITableViewState<T> extends State <UITableView<T>> {
 
   // ScrollController 滑动监听
   void _configScrollController(){
-    if (!widget.needHover) return;
+    if (!widget.needHover && widget.scrollViewDidScroll == null) return;
+    _controller?.dispose();
+    _controller = ScrollController(initialScrollOffset: widget.contentOffset == null ? 0 : widget.contentOffset);
     _controller.addListener(() {
-      _offsetY = _controller.offset;
+      if (widget.scrollViewDidScroll != null) {
+        widget.scrollViewDidScroll(_controller.offset);
+      }
+      if(!widget.needHover) { return; }
       _streamController.add(
           _offsetY = _controller.offset
       );
