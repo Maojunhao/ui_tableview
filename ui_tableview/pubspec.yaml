@@ -1,6 +1,6 @@
 name: ui_tableview
-description: A new Flutter package project.
-version: 0.0.3
+description: 一个保存了 iOS - UITableView 代码风格的滚动视图，可以用来替代 ListView，简单，易用，便于拓展的 Package。后续更新会逐步增加 iOS 更多相关 api。
+version: 0.0.5
 #author: maojunhao
 homepage: https://www.jianshu.com/u/b4119d75f4bf
 
